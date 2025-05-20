@@ -53,9 +53,20 @@ export default function LoginPage() {
       }, 1500)
     } catch (error: any) {
       console.error("Login error:", error)
+      let errorMessage = "Please check your credentials and try again."
+      
+      // Handle specific error cases
+      if (error.message.includes("Invalid login credentials")) {
+        errorMessage = "Invalid email or password. Please try again."
+      } else if (error.message.includes("Email not confirmed")) {
+        errorMessage = "Please confirm your email address before logging in."
+      } else if (error.message.includes("rate limit")) {
+        errorMessage = "Too many login attempts. Please try again later."
+      }
+
       toast({
         title: "Login failed",
-        description: error.message || "Please check your credentials and try again.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {

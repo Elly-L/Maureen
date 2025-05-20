@@ -166,7 +166,7 @@ export default function SellerProductsPage() {
           const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`
           const filePath = `${user.id}/${fileName}`
 
-          const { error: uploadError, data } = await supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from("product-images")
             .upload(filePath, imageFile)
 
@@ -198,17 +198,20 @@ export default function SellerProductsPage() {
           {
             name: newProduct.name,
             description: newProduct.description,
-            price: Number.parseFloat(newProduct.price),
-            quantity: Number.parseFloat(newProduct.quantity),
+            price: parseFloat(newProduct.price),
+            quantity: parseFloat(newProduct.quantity),
             unit: newProduct.unit,
-            category_id: newProduct.category,
+            category: newProduct.category,
             image_url: imageUrl,
             seller_id: user.id,
             location: newProduct.location || user.location || "",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           },
         ])
 
       if (insertError) {
+        console.error("Database error:", insertError)
         throw insertError
       }
 
@@ -231,14 +234,14 @@ export default function SellerProductsPage() {
       await fetchProducts()
 
       toast({
-        title: "Product added",
-        description: "Your product has been added successfully.",
+        title: "Success",
+        description: "Product added successfully!",
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding product:", error)
       toast({
         title: "Error",
-        description: "Failed to add product. Please try again.",
+        description: error.message || "Failed to add product. Please try again.",
         variant: "destructive",
       })
     } finally {
