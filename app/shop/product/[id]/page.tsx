@@ -70,6 +70,7 @@ const allProducts = [
 export default function ProductDetailPage({ params }: { params: { id: string } }) {
   const [quantity, setQuantity] = useState(1)
   const [cart, setCart] = useState<any[]>([])
+  const [activeImage, setActiveImage] = useState(0)
 
   const { user } = useAuth()
   const { toast } = useToast()
@@ -87,6 +88,13 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
       </div>
     )
   }
+
+  // Mock additional product images
+  const productImages = [
+    product.image,
+    "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-pDRSWIvcc2BYCSGY5QTsiYo5PiHQFO.png",
+    "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-QCE7H5bngULNfUn4OwIXSo9SRBVTRb.png",
+  ]
 
   const addToCart = () => {
     // In a real app, you would update the cart in a global state or context
@@ -139,13 +147,33 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
           </Link>
 
           <div className="grid md:grid-cols-2 gap-8">
-            <div className="relative aspect-square md:sticky md:top-24">
-              <Image
-                src={product.image || "/placeholder.svg"}
-                alt={product.name}
-                fill
-                className="object-cover rounded-lg"
-              />
+            <div className="space-y-4">
+              <div className="relative aspect-square overflow-hidden rounded-lg border bg-white">
+                <Image
+                  src={productImages[activeImage] || "/placeholder.svg"}
+                  alt={product.name}
+                  fill
+                  className="object-contain p-4"
+                />
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {productImages.map((img, index) => (
+                  <div
+                    key={index}
+                    className={`relative aspect-square cursor-pointer overflow-hidden rounded-md border ${
+                      activeImage === index ? "ring-2 ring-primary" : ""
+                    }`}
+                    onClick={() => setActiveImage(index)}
+                  >
+                    <Image
+                      src={img || "/placeholder.svg"}
+                      alt={`${product.name} view ${index + 1}`}
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="space-y-6">
               <div>

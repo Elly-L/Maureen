@@ -1,6 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -18,111 +21,318 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { Edit, Plus, Trash } from "lucide-react"
+import { Edit, Plus, Trash, Upload, Loader2 } from "lucide-react"
 import Image from "next/image"
-
-// Mock data for products
-const initialProducts = [
-  {
-    id: "1",
-    name: "Fresh Potatoes",
-    description: "Locally grown potatoes, perfect for cooking.",
-    price: 120,
-    quantity: 50,
-    unit: "kg",
-    category: "Vegetables",
-    image: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-lHhjsozGLWgNt4yFrDeBRbgehpNeXM.png",
-  },
-  {
-    id: "2",
-    name: "Red Onions",
-    description: "Fresh red onions from Naivasha farms.",
-    price: 100,
-    quantity: 30,
-    unit: "kg",
-    category: "Vegetables",
-    image: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-QCE7H5bngULNfUn4OwIXSo9SRBVTRb.png",
-  },
-  {
-    id: "3",
-    name: "Ripe Tomatoes",
-    description: "Juicy tomatoes, perfect for salads and cooking.",
-    price: 150,
-    quantity: 25,
-    unit: "kg",
-    category: "Vegetables",
-    image: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-pDRSWIvcc2BYCSGY5QTsiYo5PiHQFO.png",
-  },
-]
+import { useAuth } from "@/components/auth-provider"
+import { supabase } from "@/lib/supabase"
 
 export default function SellerProductsPage() {
-  const [products, setProducts] = useState(initialProducts)
+  const [products, setProducts] = useState<any[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [currentProduct, setCurrentProduct] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [editImageFile, setEditImageFile] = useState<File | null>(null)
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null)
+
   const [newProduct, setNewProduct] = useState({
     name: "",
     description: "",
-    price: 0,
-    quantity: 0,
+    price: "",
+    quantity: "",
     unit: "kg",
     category: "Vegetables",
-    image: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-lHhjsozGLWgNt4yFrDeBRbgehpNeXM.png", // Default image
+    image_url: "",
+    location: "",
   })
 
   const { toast } = useToast()
+  const { user } = useAuth()
+  const router = useRouter()
 
-  const handleAddProduct = () => {
-    const productToAdd = {
-      ...newProduct,
-      id: Math.random().toString(36).substring(2, 9),
+  useEffect(() => {
+    if (!user) {
+      return
     }
 
-    setProducts([...products, productToAdd])
-    setNewProduct({
-      name: "",
-      description: "",
-      price: 0,
-      quantity: 0,
-      unit: "kg",
-      category: "Vegetables",
-      image: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-lHhjsozGLWgNt4yFrDeBRbgehpNeXM.png",
-    })
-    setIsAddDialogOpen(false)
+    fetchProducts()
+  }, [user])
 
-    toast({
-      title: "Product added",
-      description: "Your product has been added successfully.",
-    })
+  const fetchProducts = async () => {
+    try {
+      setIsLoading(true)
+
+      if (!user) {
+        console.error("No user found")
+        return
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("seller_id", user.id)
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        throw error
+      }
+
+      console.log("Fetched products:", data)
+      setProducts(data || [])
+    } catch (error) {
+      console.error("Error fetching products:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load products. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleEditProduct = () => {
-    if (!currentProduct) return
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-    const updatedProducts = products.map((product) => (product.id === currentProduct.id ? currentProduct : product))
-
-    setProducts(updatedProducts)
-    setIsEditDialogOpen(false)
-
-    toast({
-      title: "Product updated",
-      description: "Your product has been updated successfully.",
-    })
+    // Preview the image
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (isEdit) {
+        setEditImagePreview(reader.result as string)
+        setEditImageFile(file)
+      } else {
+        setImagePreview(reader.result as string)
+        setImageFile(file)
+      }
+    }
+    reader.readAsDataURL(file)
   }
 
-  const handleDeleteProduct = (id: string) => {
-    const updatedProducts = products.filter((product) => product.id !== id)
-    setProducts(updatedProducts)
+  const uploadImage = async (file: File) => {
+    try {
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`
+      const filePath = `products/${fileName}`
 
-    toast({
-      title: "Product deleted",
-      description: "Your product has been deleted successfully.",
-    })
+      const { error: uploadError } = await supabase.storage.from("product-images").upload(filePath, file)
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      // Get the public URL
+      const { data } = supabase.storage.from("product-images").getPublicUrl(filePath)
+
+      return data.publicUrl
+    } catch (error) {
+      console.error("Error uploading image:", error)
+      throw error
+    }
+  }
+
+  const handleAddProduct = async () => {
+    try {
+      setIsSubmitting(true)
+
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in to add products.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Validate inputs
+      if (!newProduct.name || !newProduct.description || !newProduct.price || !newProduct.quantity) {
+        toast({
+          title: "Error",
+          description: "Please fill in all required fields.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      let imageUrl = ""
+
+      // Upload image if provided
+      if (imageFile) {
+        imageUrl = await uploadImage(imageFile)
+      }
+
+      // Add product to database
+      const { data, error } = await supabase
+        .from("products")
+        .insert([
+          {
+            name: newProduct.name,
+            description: newProduct.description,
+            price: Number.parseFloat(newProduct.price),
+            quantity: Number.parseFloat(newProduct.quantity),
+            unit: newProduct.unit,
+            category: newProduct.category,
+            image_url: imageUrl,
+            seller_id: user.id,
+            location: newProduct.location || user.location || "",
+          },
+        ])
+        .select()
+
+      if (error) {
+        throw error
+      }
+
+      // Reset form
+      setNewProduct({
+        name: "",
+        description: "",
+        price: "",
+        quantity: "",
+        unit: "kg",
+        category: "Vegetables",
+        image_url: "",
+        location: "",
+      })
+      setImageFile(null)
+      setImagePreview(null)
+      setIsAddDialogOpen(false)
+
+      // Refresh products
+      await fetchProducts()
+
+      toast({
+        title: "Product added",
+        description: "Your product has been added successfully.",
+      })
+    } catch (error) {
+      console.error("Error adding product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add product. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleEditProduct = async () => {
+    try {
+      setIsSubmitting(true)
+
+      if (!currentProduct) return
+
+      // Validate inputs
+      if (!currentProduct.name || !currentProduct.description || !currentProduct.price || !currentProduct.quantity) {
+        toast({
+          title: "Error",
+          description: "Please fill in all required fields.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      let imageUrl = currentProduct.image_url
+
+      // Upload new image if provided
+      if (editImageFile) {
+        imageUrl = await uploadImage(editImageFile)
+      }
+
+      // Update product in database
+      const { error } = await supabase
+        .from("products")
+        .update({
+          name: currentProduct.name,
+          description: currentProduct.description,
+          price: Number.parseFloat(currentProduct.price),
+          quantity: Number.parseFloat(currentProduct.quantity),
+          unit: currentProduct.unit,
+          category: currentProduct.category,
+          image_url: imageUrl,
+          location: currentProduct.location || user?.location || "",
+        })
+        .eq("id", currentProduct.id)
+
+      if (error) {
+        throw error
+      }
+
+      // Reset form
+      setCurrentProduct(null)
+      setEditImageFile(null)
+      setEditImagePreview(null)
+      setIsEditDialogOpen(false)
+
+      // Refresh products
+      await fetchProducts()
+
+      toast({
+        title: "Product updated",
+        description: "Your product has been updated successfully.",
+      })
+    } catch (error) {
+      console.error("Error updating product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update product. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      const { error } = await supabase.from("products").delete().eq("id", id)
+
+      if (error) {
+        throw error
+      }
+
+      // Refresh products
+      await fetchProducts()
+
+      toast({
+        title: "Product deleted",
+        description: "Your product has been deleted successfully.",
+      })
+    } catch (error) {
+      console.error("Error deleting product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete product. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const openEditDialog = (product: any) => {
-    setCurrentProduct(product)
+    setCurrentProduct({
+      ...product,
+      price: product.price.toString(),
+      quantity: product.quantity.toString(),
+    })
+    setEditImagePreview(product.image_url)
     setIsEditDialogOpen(true)
+  }
+
+  if (!user) {
+    return (
+      <DashboardLayout>
+        <div className="flex flex-col items-center justify-center h-[50vh]">
+          <p className="text-lg text-muted-foreground">Please log in to view your products.</p>
+          <Button className="mt-4" onClick={() => router.push("/auth/login")}>
+            Log In
+          </Button>
+        </div>
+      </DashboardLayout>
+    )
   }
 
   return (
@@ -142,46 +352,66 @@ export default function SellerProductsPage() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Product Name</Label>
+                <Label htmlFor="name">Product Name*</Label>
                 <Input
                   id="name"
                   value={newProduct.name}
                   onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
                   placeholder="e.g. Fresh Potatoes"
+                  required
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">Description*</Label>
                 <Textarea
                   id="description"
                   value={newProduct.description}
                   onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
                   placeholder="Describe your product"
+                  required
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="price">Price (KSh)</Label>
+                  <Label htmlFor="price">Price (KSh)*</Label>
                   <Input
                     id="price"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={newProduct.price}
-                    onChange={(e) => setNewProduct({ ...newProduct, price: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Allow empty string, digits, and at most one decimal point
+                      if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                        setNewProduct({ ...newProduct, price: value })
+                      }
+                    }}
+                    placeholder="0"
+                    required
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="quantity">Quantity</Label>
+                  <Label htmlFor="quantity">Quantity*</Label>
                   <Input
                     id="quantity"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={newProduct.quantity}
-                    onChange={(e) => setNewProduct({ ...newProduct, quantity: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Allow empty string, digits, and at most one decimal point
+                      if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                        setNewProduct({ ...newProduct, quantity: value })
+                      }
+                    }}
+                    placeholder="0"
+                    required
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="unit">Unit</Label>
+                  <Label htmlFor="unit">Unit*</Label>
                   <Select
                     value={newProduct.unit}
                     onValueChange={(value) => setNewProduct({ ...newProduct, unit: value })}
@@ -200,7 +430,7 @@ export default function SellerProductsPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="category">Category</Label>
+                  <Label htmlFor="category">Category*</Label>
                   <Select
                     value={newProduct.category}
                     onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}
@@ -220,58 +450,123 @@ export default function SellerProductsPage() {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="image">Image URL</Label>
+                <Label htmlFor="location">Location</Label>
                 <Input
-                  id="image"
-                  value={newProduct.image}
-                  onChange={(e) => setNewProduct({ ...newProduct, image: e.target.value })}
-                  placeholder="Image URL"
+                  id="location"
+                  value={newProduct.location}
+                  onChange={(e) => setNewProduct({ ...newProduct, location: e.target.value })}
+                  placeholder={user?.location || "e.g. Nairobi"}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="image">Product Image</Label>
+                <div className="flex items-center gap-4">
+                  <div className="relative h-24 w-24 overflow-hidden rounded-md border">
+                    {imagePreview ? (
+                      <Image
+                        src={imagePreview || "/placeholder.svg"}
+                        alt="Product preview"
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-muted">
+                        <Upload className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      id="image"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleImageChange(e)}
+                      className="cursor-pointer"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">Upload a product image (max 5MB)</p>
+                  </div>
+                </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button onClick={handleAddProduct}>Add Product</Button>
+              <Button onClick={handleAddProduct} disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Adding...
+                  </>
+                ) : (
+                  "Add Product"
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {products.map((product) => (
-          <Card key={product.id} className="overflow-hidden">
-            <div className="relative aspect-video">
-              <Image src={product.image || "/placeholder.svg"} alt={product.name} fill className="object-cover" />
-            </div>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold">{product.name}</h3>
-                  <p className="text-sm text-muted-foreground">{product.description}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold">
-                    KSh {product.price}/{product.unit}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Stock: {product.quantity} {product.unit}
-                  </p>
-                </div>
+      {isLoading ? (
+        <div className="mt-8 flex justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : products.length === 0 ? (
+        <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
+            <Plus className="h-10 w-10 text-primary" />
+          </div>
+          <h2 className="mt-4 text-xl font-semibold">No products yet</h2>
+          <p className="mt-2 text-muted-foreground">Add your first product to start selling on FarmConnect.</p>
+          <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)}>
+            Add Product
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {products.map((product) => (
+            <Card key={product.id} className="overflow-hidden">
+              <div className="relative aspect-video bg-muted">
+                {product.image_url ? (
+                  <Image
+                    src={product.image_url || "/placeholder.svg"}
+                    alt={product.name}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <p className="text-muted-foreground">No image</p>
+                  </div>
+                )}
               </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => openEditDialog(product)}>
-                  <Edit className="mr-2 h-4 w-4" /> Edit
-                </Button>
-                <Button variant="destructive" size="sm" onClick={() => handleDeleteProduct(product.id)}>
-                  <Trash className="mr-2 h-4 w-4" /> Delete
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-semibold">{product.name}</h3>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{product.description}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">
+                      KSh {product.price}/{product.unit}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Stock: {product.quantity} {product.unit}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openEditDialog(product)}>
+                    <Edit className="mr-2 h-4 w-4" /> Edit
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDeleteProduct(product.id)}>
+                    <Trash className="mr-2 h-4 w-4" /> Delete
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
@@ -282,44 +577,62 @@ export default function SellerProductsPage() {
           {currentProduct && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="edit-name">Product Name</Label>
+                <Label htmlFor="edit-name">Product Name*</Label>
                 <Input
                   id="edit-name"
                   value={currentProduct.name}
                   onChange={(e) => setCurrentProduct({ ...currentProduct, name: e.target.value })}
+                  required
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-description">Description</Label>
+                <Label htmlFor="edit-description">Description*</Label>
                 <Textarea
                   id="edit-description"
                   value={currentProduct.description}
                   onChange={(e) => setCurrentProduct({ ...currentProduct, description: e.target.value })}
+                  required
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-price">Price (KSh)</Label>
+                  <Label htmlFor="edit-price">Price (KSh)*</Label>
                   <Input
                     id="edit-price"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={currentProduct.price}
-                    onChange={(e) => setCurrentProduct({ ...currentProduct, price: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Allow empty string, digits, and at most one decimal point
+                      if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                        setCurrentProduct({ ...currentProduct, price: value })
+                      }
+                    }}
+                    required
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-quantity">Quantity</Label>
+                  <Label htmlFor="edit-quantity">Quantity*</Label>
                   <Input
                     id="edit-quantity"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={currentProduct.quantity}
-                    onChange={(e) => setCurrentProduct({ ...currentProduct, quantity: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Allow empty string, digits, and at most one decimal point
+                      if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                        setCurrentProduct({ ...currentProduct, quantity: value })
+                      }
+                    }}
+                    required
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-unit">Unit</Label>
+                  <Label htmlFor="edit-unit">Unit*</Label>
                   <Select
                     value={currentProduct.unit}
                     onValueChange={(value) => setCurrentProduct({ ...currentProduct, unit: value })}
@@ -338,7 +651,7 @@ export default function SellerProductsPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-category">Category</Label>
+                  <Label htmlFor="edit-category">Category*</Label>
                   <Select
                     value={currentProduct.category}
                     onValueChange={(value) => setCurrentProduct({ ...currentProduct, category: value })}
@@ -358,20 +671,58 @@ export default function SellerProductsPage() {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-image">Image URL</Label>
+                <Label htmlFor="edit-location">Location</Label>
                 <Input
-                  id="edit-image"
-                  value={currentProduct.image}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, image: e.target.value })}
+                  id="edit-location"
+                  value={currentProduct.location}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, location: e.target.value })}
+                  placeholder={user?.location || "e.g. Nairobi"}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-image">Product Image</Label>
+                <div className="flex items-center gap-4">
+                  <div className="relative h-24 w-24 overflow-hidden rounded-md border">
+                    {editImagePreview ? (
+                      <Image
+                        src={editImagePreview || "/placeholder.svg"}
+                        alt="Product preview"
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-muted">
+                        <Upload className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      id="edit-image"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleImageChange(e, true)}
+                      className="cursor-pointer"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">Upload a new product image (max 5MB)</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button onClick={handleEditProduct}>Save Changes</Button>
+            <Button onClick={handleEditProduct} disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

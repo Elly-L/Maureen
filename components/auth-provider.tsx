@@ -2,8 +2,9 @@
 
 import type React from "react"
 
-import { createContext, useContext, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { createContext, useContext, useEffect, useState, useRef } from "react"
+import { useRouter, usePathname } from "next/navigation"
+import { supabase } from "@/lib/supabase"
 
 type User = {
   id: string
@@ -17,9 +18,10 @@ type User = {
 type AuthContextType = {
   user: User | null
   login: (email: string, password: string) => Promise<void>
-  signup: (user: Partial<User>, password: string) => Promise<void>
+  signup: (user: Partial<User>, password: string) => Promise<{ requiresEmailConfirmation: boolean; role: string }>
   logout: () => void
   isLoading: boolean
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -28,49 +30,142 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const pathname = usePathname()
+  const isRefreshing = useRef(false)
+
+  const refreshUser = async () => {
+    // Prevent multiple simultaneous refreshes
+    if (isRefreshing.current) {
+      console.log("Already refreshing user, skipping...")
+      return
+    }
+
+    try {
+      isRefreshing.current = true
+      console.log("Refreshing user...")
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (session) {
+        console.log("Session found:", session.user.id)
+        // Get user profile from Supabase
+        const { data: profile, error } = await supabase.from("profiles").select("*").eq("id", session.user.id).single()
+
+        if (error) {
+          console.error("Error fetching profile:", error)
+          return
+        }
+
+        if (profile) {
+          console.log("Profile loaded:", profile)
+          const userData = {
+            id: session.user.id,
+            name: profile.name || session.user.email?.split("@")[0] || "",
+            email: session.user.email || "",
+            role: profile.role || "buyer",
+            location: profile.location,
+            phone: profile.phone,
+          }
+          console.log("Setting user state:", userData)
+          setUser(userData)
+        } else {
+          console.log("No profile found for user:", session.user.id)
+        }
+      } else {
+        console.log("No session found")
+        setUser(null)
+      }
+    } catch (error) {
+      console.error("Error refreshing user:", error)
+    } finally {
+      isRefreshing.current = false
+    }
+  }
 
   useEffect(() => {
-    // Check if user is logged in
-    const storedUser = localStorage.getItem("farmconnect-user")
-    if (storedUser) {
-      setUser(JSON.parse(storedUser))
+    // Check if user is logged in with Supabase
+    const checkUser = async () => {
+      await refreshUser()
+      setIsLoading(false)
     }
-    setIsLoading(false)
+
+    checkUser()
+
+    // Set up auth state change listener
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event, session)
+
+      if (event === "SIGNED_IN" && session) {
+        await refreshUser()
+      } else if (event === "SIGNED_OUT") {
+        console.log("User signed out")
+        setUser(null)
+      } else if (event === "USER_UPDATED") {
+        await refreshUser()
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [])
+
+  // Effect to handle redirects based on auth state
+  useEffect(() => {
+    if (isLoading) return
+
+    const authRoutes = ["/auth/login", "/auth/signup"]
+    const isAuthRoute = authRoutes.includes(pathname)
+    const isDashboardRoute = pathname.includes("/dashboard")
+
+    if (user) {
+      console.log("User is logged in, current path:", pathname)
+      // If user is logged in and on an auth route, redirect to appropriate dashboard
+      if (isAuthRoute) {
+        console.log("Redirecting from auth route to dashboard")
+        if (user.role === "seller") {
+          router.push("/dashboard/seller")
+        } else {
+          router.push("/shop")
+        }
+      }
+    } else {
+      console.log("User is not logged in, current path:", pathname)
+      // If user is not logged in and trying to access dashboard, redirect to login
+      if (isDashboardRoute) {
+        console.log("Redirecting from dashboard to login")
+        router.push("/auth/login")
+      }
+    }
+  }, [user, isLoading, pathname, router])
 
   const login = async (email: string, password: string) => {
     setIsLoading(true)
     try {
-      // This is a mock implementation - in a real app, you'd call your API
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-      // Mock user data - in a real app, this would come from your backend
-      const mockUsers = [
-        {
-          id: "1",
-          name: "John Seller",
-          email: "seller@example.com",
-          password: "password",
-          role: "seller",
-          location: "Nairobi",
-          phone: "0712345678",
-        },
-        { id: "2", name: "Jane Buyer", email: "buyer@example.com", password: "password", role: "buyer" },
-      ]
-
-      const foundUser = mockUsers.find((u) => u.email === email && u.password === password)
-
-      if (!foundUser) {
-        throw new Error("Invalid credentials")
+      if (error) {
+        throw error
       }
 
-      const { password: _, ...userWithoutPassword } = foundUser
-      setUser(userWithoutPassword as User)
-      localStorage.setItem("farmconnect-user", JSON.stringify(userWithoutPassword))
+      console.log("Login successful:", data)
+
+      // Wait for the session to be established
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      await refreshUser()
 
       // Redirect based on role
-      if (userWithoutPassword.role === "seller") {
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).single()
+
+      if (profile?.role === "seller") {
         router.push("/dashboard/seller")
       } else {
         router.push("/shop")
@@ -86,29 +181,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signup = async (userData: Partial<User>, password: string) => {
     setIsLoading(true)
     try {
-      // This is a mock implementation - in a real app, you'd call your API
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      console.log("Signup data:", userData)
 
-      // Create a new user with a random ID
-      const newUser = {
-        id: Math.random().toString(36).substring(2, 9),
-        name: userData.name || "",
+      // Ensure role is explicitly set
+      const role = userData.role || "buyer"
+
+      // Create auth user with email confirmation disabled for now
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email || "",
-        role: userData.role || "buyer",
-        location: userData.location,
-        phone: userData.phone,
-      } as User
+        password: password,
+        options: {
+          data: {
+            name: userData.name,
+            role: role,
+          },
+        },
+      })
 
-      setUser(newUser)
-      localStorage.setItem("farmconnect-user", JSON.stringify(newUser))
-
-      // Redirect based on role
-      if (newUser.role === "seller") {
-        router.push("/dashboard/seller")
-      } else {
-        router.push("/shop")
+      if (authError) {
+        throw authError
       }
+
+      if (!authData.user) {
+        throw new Error("Failed to create user")
+      }
+
+      console.log("Signup response:", authData)
+
+      // Create profile regardless of email confirmation status
+      const { error: profileError } = await supabase.from("profiles").insert([
+        {
+          id: authData.user.id,
+          name: userData.name,
+          role: role,
+          location: userData.location,
+          phone: userData.phone,
+        },
+      ])
+
+      if (profileError) {
+        console.error("Profile creation error:", profileError)
+      }
+
+      // Wait for the session to be established
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      // Refresh user state
+      await refreshUser()
+
+      // Check if email confirmation is required
+      const requiresEmailConfirmation = authData.user.identities && authData.user.identities.length === 0
+
+      if (!requiresEmailConfirmation) {
+        // Redirect based on role
+        if (role === "seller") {
+          router.push("/dashboard/seller")
+        } else {
+          router.push("/shop")
+        }
+      }
+
+      return { requiresEmailConfirmation: requiresEmailConfirmation || false, role: role }
     } catch (error) {
       console.error("Signup failed:", error)
       throw error
@@ -117,13 +250,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const logout = () => {
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error("Logout error:", error)
+    }
     setUser(null)
-    localStorage.removeItem("farmconnect-user")
     router.push("/")
   }
 
-  return <AuthContext.Provider value={{ user, login, signup, logout, isLoading }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, login, signup, logout, isLoading, refreshUser }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {

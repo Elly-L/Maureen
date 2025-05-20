@@ -9,6 +9,7 @@ import { LayoutDashboard, Package, ShoppingCart, Settings, LogOut, Menu, Leaf, U
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useAuth } from "@/components/auth-provider"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -19,6 +20,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [isMounted, setIsMounted] = useState(false)
+  const [wrongDashboard, setWrongDashboard] = useState(false)
 
   useEffect(() => {
     setIsMounted(true)
@@ -26,8 +28,28 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     // If not logged in, redirect to login
     if (!user) {
       router.push("/auth/login")
+      return
     }
-  }, [user, router])
+
+    // Check if user is in the correct dashboard
+    const inSellerDashboard = pathname.includes("/dashboard/seller")
+    const inBuyerDashboard = pathname.includes("/dashboard/buyer")
+
+    if ((user.role === "seller" && inBuyerDashboard) || (user.role === "buyer" && inSellerDashboard)) {
+      console.log("User in wrong dashboard:", user.role, pathname)
+      setWrongDashboard(true)
+    } else {
+      setWrongDashboard(false)
+    }
+  }, [user, router, pathname])
+
+  const redirectToCorrectDashboard = () => {
+    if (user?.role === "seller") {
+      router.push("/dashboard/seller")
+    } else {
+      router.push("/dashboard/buyer/orders")
+    }
+  }
 
   if (!isMounted || !user) {
     return null
@@ -82,6 +104,23 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   ]
 
   const navItems = isSeller ? sellerNavItems : buyerNavItems
+
+  if (wrongDashboard) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-4">
+        <Alert className="max-w-md">
+          <AlertTitle>Wrong Dashboard</AlertTitle>
+          <AlertDescription>
+            <p className="mb-4">
+              You are trying to access the {isSeller ? "buyer" : "seller"} dashboard, but you are registered as a{" "}
+              {isSeller ? "seller" : "buyer"}.
+            </p>
+            <Button onClick={redirectToCorrectDashboard}>Go to {isSeller ? "Seller" : "Buyer"} Dashboard</Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen flex-col">

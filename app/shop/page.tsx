@@ -422,14 +422,15 @@ export default function ShopPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {products.map((product) => (
-                  <Card key={product.id} className="overflow-hidden">
-                    <div className="relative aspect-square">
+                  <Card key={product.id} className="overflow-hidden group">
+                    <div className="relative aspect-square bg-white">
                       <Image
                         src={product.image || "/placeholder.svg"}
                         alt={product.name}
                         fill
-                        className="object-cover"
+                        className="object-contain p-4 transition-transform group-hover:scale-105"
                       />
+                      <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <CardContent className="p-4">
                       <div className="flex flex-col space-y-1.5">

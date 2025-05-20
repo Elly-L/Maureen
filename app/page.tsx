@@ -59,39 +59,15 @@ export default function Home() {
                   </Link>
                 </div>
               </div>
-              <div className="mx-auto grid max-w-[500px] grid-cols-2 gap-4">
-                <div className="grid gap-4">
-                  <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-lHhjsozGLWgNt4yFrDeBRbgehpNeXM.png"
-                    alt="Potatoes in market"
-                    width={250}
-                    height={300}
-                    className="rounded-lg object-cover w-full aspect-[4/5]"
-                  />
-                  <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-QCE7H5bngULNfUn4OwIXSo9SRBVTRb.png"
-                    alt="Red onions"
-                    width={250}
-                    height={250}
-                    className="rounded-lg object-cover w-full aspect-square"
-                  />
-                </div>
-                <div className="grid gap-4">
-                  <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-pDRSWIvcc2BYCSGY5QTsiYo5PiHQFO.png"
-                    alt="Tomatoes in crates"
-                    width={250}
-                    height={250}
-                    className="rounded-lg object-cover w-full aspect-square"
-                  />
-                  <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-eNBlYlNxta2dPVp8IoWzNwbuwz39jn.png"
-                    alt="Fresh cabbage"
-                    width={250}
-                    height={300}
-                    className="rounded-lg object-cover w-full aspect-[4/5]"
-                  />
-                </div>
+              <div className="mx-auto relative overflow-hidden rounded-lg">
+                <Image
+                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/20250520_1138_Kenyan%20Market%20Connection_simple_compose_01jvpdcfjzf038x32xw5jbe76v-GP7AUuJZOuJcAO8VMuvK6Z3D6mNNZa.png"
+                  alt="FarmConnect seller with fresh produce"
+                  width={600}
+                  height={600}
+                  className="object-cover rounded-lg shadow-lg"
+                  priority
+                />
               </div>
             </div>
           </div>
