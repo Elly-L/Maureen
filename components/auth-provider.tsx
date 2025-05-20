@@ -72,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(userData)
         } else {
           console.log("No profile found for user:", session.user.id)
+          setUser(null)
         }
       } else {
         console.log("No session found")
@@ -79,8 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error("Error refreshing user:", error)
+      setUser(null)
     } finally {
       isRefreshing.current = false
+      setIsLoading(false)
     }
   }
 
@@ -88,7 +91,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check if user is logged in with Supabase
     const checkUser = async () => {
       await refreshUser()
-      setIsLoading(false)
     }
 
     checkUser()
@@ -124,7 +126,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (user) {
       console.log("User is logged in, current path:", pathname)
-      // If user is logged in and on an auth route, redirect to appropriate dashboard
       if (isAuthRoute) {
         console.log("Redirecting from auth route to dashboard")
         if (user.role === "seller") {
@@ -134,8 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } else {
-      console.log("User is not logged in, current path:", pathname)
-      // If user is not logged in and trying to access dashboard, redirect to login
+      console.log("User not logged in, current path:", pathname)
       if (isDashboardRoute) {
         console.log("Redirecting from dashboard to login")
         router.push("/auth/login")
@@ -144,123 +144,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, isLoading, pathname, router])
 
   const login = async (email: string, password: string) => {
-    setIsLoading(true)
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-      if (error) {
-        throw error
-      }
-
-      console.log("Login successful:", data)
-
-      // Wait for the session to be established
-      await new Promise((resolve) => setTimeout(resolve, 500))
-
-      await refreshUser()
-
-      // Redirect based on role
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).single()
-
-      if (profile?.role === "seller") {
-        router.push("/dashboard/seller")
-      } else {
-        router.push("/shop")
-      }
-    } catch (error) {
-      console.error("Login failed:", error)
+    if (error) {
       throw error
-    } finally {
-      setIsLoading(false)
     }
+
+    await refreshUser()
   }
 
   const signup = async (userData: Partial<User>, password: string) => {
-    setIsLoading(true)
-    try {
-      console.log("Signup data:", userData)
-
-      // Ensure role is explicitly set
-      const role = userData.role || "buyer"
-
-      // Create auth user with email confirmation disabled for now
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email || "",
-        password: password,
-        options: {
-          data: {
-            name: userData.name,
-            role: role,
-          },
+    const { error: signUpError, data } = await supabase.auth.signUp({
+      email: userData.email!,
+      password,
+      options: {
+        data: {
+          name: userData.name,
+          role: userData.role,
         },
-      })
+      },
+    })
 
-      if (authError) {
-        throw authError
-      }
+    if (signUpError) {
+      throw signUpError
+    }
 
-      if (!authData.user) {
-        throw new Error("Failed to create user")
-      }
-
-      console.log("Signup response:", authData)
-
-      // Create profile regardless of email confirmation status
+    // Create profile
+    if (data.user) {
       const { error: profileError } = await supabase.from("profiles").insert([
         {
-          id: authData.user.id,
+          id: data.user.id,
           name: userData.name,
-          role: role,
+          email: userData.email,
+          role: userData.role,
           location: userData.location,
           phone: userData.phone,
         },
       ])
 
       if (profileError) {
-        console.error("Profile creation error:", profileError)
+        throw profileError
       }
+    }
 
-      // Wait for the session to be established
-      await new Promise((resolve) => setTimeout(resolve, 500))
-
-      // Refresh user state
-      await refreshUser()
-
-      // Check if email confirmation is required
-      const requiresEmailConfirmation = authData.user.identities && authData.user.identities.length === 0
-
-      if (!requiresEmailConfirmation) {
-        // Redirect based on role
-        if (role === "seller") {
-          router.push("/dashboard/seller")
-        } else {
-          router.push("/shop")
-        }
-      }
-
-      return { requiresEmailConfirmation: requiresEmailConfirmation || false, role: role }
-    } catch (error) {
-      console.error("Signup failed:", error)
-      throw error
-    } finally {
-      setIsLoading(false)
+    return {
+      requiresEmailConfirmation: !data.session,
+      role: userData.role || "buyer",
     }
   }
 
   const logout = async () => {
     const { error } = await supabase.auth.signOut()
     if (error) {
-      console.error("Logout error:", error)
+      console.error("Error signing out:", error)
     }
     setUser(null)
-    router.push("/")
+    router.push("/auth/login")
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, isLoading, refreshUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        signup,
+        logout,
+        refreshUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

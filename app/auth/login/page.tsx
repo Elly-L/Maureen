@@ -51,12 +51,14 @@ export default function LoginPage() {
         const redirectPath = email.includes("seller") ? "/dashboard/seller" : "/shop"
         router.push(redirectPath)
       }, 1500)
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Login error:", error)
       toast({
         title: "Login failed",
-        description: "Please check your credentials and try again.",
+        description: error.message || "Please check your credentials and try again.",
         variant: "destructive",
       })
+    } finally {
       setIsLoading(false)
     }
   }

@@ -161,11 +161,38 @@ export default function SellerProductsPage() {
 
       // Upload image if provided
       if (imageFile) {
-        imageUrl = await uploadImage(imageFile)
+        try {
+          const fileExt = imageFile.name.split(".").pop()
+          const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`
+          const filePath = `${user.id}/${fileName}`
+
+          const { error: uploadError, data } = await supabase.storage
+            .from("product-images")
+            .upload(filePath, imageFile)
+
+          if (uploadError) {
+            throw uploadError
+          }
+
+          // Get the public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from("product-images")
+            .getPublicUrl(filePath)
+
+          imageUrl = publicUrl
+        } catch (error) {
+          console.error("Error uploading image:", error)
+          toast({
+            title: "Error",
+            description: "Failed to upload image. Please try again.",
+            variant: "destructive",
+          })
+          return
+        }
       }
 
       // Add product to database
-      const { data, error } = await supabase
+      const { error: insertError } = await supabase
         .from("products")
         .insert([
           {
@@ -174,16 +201,15 @@ export default function SellerProductsPage() {
             price: Number.parseFloat(newProduct.price),
             quantity: Number.parseFloat(newProduct.quantity),
             unit: newProduct.unit,
-            category: newProduct.category,
+            category_id: newProduct.category,
             image_url: imageUrl,
             seller_id: user.id,
             location: newProduct.location || user.location || "",
           },
         ])
-        .select()
 
-      if (error) {
-        throw error
+      if (insertError) {
+        throw insertError
       }
 
       // Reset form
